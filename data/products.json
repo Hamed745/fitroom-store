@@ -1,0 +1,102 @@
+[
+  {
+    "id": "logo-tee",
+    "name": "Logo Tee",
+    "price": 35,
+    "category": "Tees",
+    "rating": 4.7,
+    "layer": "top",
+    "image": "/products/logo-tee.webp",
+    "date": "2026-11-10",
+    "new": true
+  },
+  {
+    "id": "graphic-tee",
+    "name": "Graphic Tee",
+    "price": 35,
+    "oldPrice": 42,
+    "category": "Tees",
+    "rating": 4.5,
+    "layer": "top",
+    "image": "/products/graphic-tee.webp",
+    "date": "2026-11-02",
+    "new": true
+  },
+  {
+    "id": "hoodie",
+    "name": "Hoodie",
+    "price": 79,
+    "category": "Hoodies & Sweats",
+    "rating": 4.8,
+    "layer": "top",
+    "image": "/products/hoodie.webp",
+    "date": "2026-11-08",
+    "new": true
+  },
+  {
+    "id": "crewneck",
+    "name": "Crewneck",
+    "price": 69,
+    "category": "Hoodies & Sweats",
+    "rating": 4.6,
+    "layer": "top",
+    "image": "/products/crewneck.webp",
+    "date": "2026-10-28",
+    "new": false
+  },
+  {
+    "id": "varsity-jacket",
+    "name": "Varsity Jacket",
+    "price": 189,
+    "category": "Jackets",
+    "rating": 4.9,
+    "layer": "outer",
+    "image": "/products/varsity-jacket.webp",
+    "date": "2026-11-12",
+    "new": true
+  },
+  {
+    "id": "joggers",
+    "name": "Joggers",
+    "price": 69,
+    "category": "Trousers",
+    "rating": 4.4,
+    "layer": "bottom",
+    "image": "/products/joggers.webp",
+    "date": "2026-10-20",
+    "new": false
+  },
+  {
+    "id": "white-sneakers",
+    "name": "White Sneakers",
+    "price": 109,
+    "category": "Shoes",
+    "rating": 4.8,
+    "layer": "shoes",
+    "image": "/products/white-sneakers.webp",
+    "date": "2026-11-05",
+    "new": true
+  },
+  {
+    "id": "dad-cap",
+    "name": "Dad Cap",
+    "price": 29,
+    "category": "Hats",
+    "rating": 4.3,
+    "layer": "hat",
+    "image": "/products/dad-cap.webp",
+    "date": "2026-10-15",
+    "new": false
+  },
+  {
+    "id": "beanie",
+    "name": "Beanie",
+    "price": 25,
+    "category": "Hats",
+    "rating": 4.5,
+    "layer": "hat",
+    "image": "/products/beanie.webp",
+    "date": "2026-10-10",
+    "new": false
+  }
+]
