@@ -5,7 +5,7 @@ import {Close} from './Icons';
 const cache=new Map<string,string>();
 const names:Record<Slot,string>={top:'Top / T-shirt',outer:'Jacket / outerwear',bottom:'Trousers',shoes:'Shoes',hat:'Hat'};
 export default function FittingRoom(){
- const s=useStore(),[image,setImage]=useState<string|null>(null),[renderedKey,setRenderedKey]=useState(''),[loading,setLoading]=useState(false),[zoom,setZoom]=useState(false),[slot,setSlot]=useState<Slot>('top'),[notice,setNotice]=useState(''),[error,setError]=useState(false),[aiReady,setAiReady]=useState<boolean|null>(null),[retry,setRetry]=useState(0);
+ const s=useStore(),[image,setImage]=useState<string|null>(null),[renderedKey,setRenderedKey]=useState(''),[loading,setLoading]=useState(false),[zoom,setZoom]=useState(false),[slot,setSlot]=useState<Slot>('top'),[notice,setNotice]=useState(''),[error,setError]=useState(false),[aiReady,setAiReady]=useState<boolean|null>(null),[retry,setRetry]=useState(0),[paused,setPaused]=useState(false);
  const latestKey=useRef('');
  const ids=SLOTS.map(k=>s.outfit[k]).filter(Boolean) as string[],key=SLOTS.map(k=>s.outfit[k]||'-').join('|');
  const hasItems=ids.length>0,current=renderedKey===key&&!!image;
@@ -19,6 +19,7 @@ export default function FittingRoom(){
   if(cached){setImage(cached);setRenderedKey(key);setLoading(false);return}
   setImage(null);setRenderedKey('');
   if(aiReady===false){setLoading(false);setError(true);setNotice('Add IMAGE_API_KEY to .env.local and restart the server to enable automatic realistic fitting.');return}
+  if(paused){setLoading(false);setError(true);setNotice('Automatic image requests are paused after an API limit error. Check your API billing/limits, then select Retry once the issue is resolved.');return}
   if(aiReady===null){setLoading(false);return}
   const controller=new AbortController();
   setLoading(true);
@@ -26,7 +27,7 @@ export default function FittingRoom(){
    try{
     const res=await fetch('/api/tryon',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({ids,custom:Object.fromEntries(ids.filter(i=>i.startsWith('custom-')).map(i=>[i,{name:byId(i).name,layer:byId(i).layer,image:byId(i).image}]))})});
     const d=await res.json();
-    if(!res.ok||!d.image)throw new Error(d.message||'Image generation failed.');
+    if(!res.ok||!d.image){if(d.paused)setPaused(true);throw new Error(d.message||'Image generation failed.')}
     cache.set(key,d.image);
     if(latestKey.current===key){setImage(d.image);setRenderedKey(key);setNotice('Your selected clothes are now shown on the mannequin.')}
    }catch(e){
@@ -35,7 +36,7 @@ export default function FittingRoom(){
    }finally{if(!controller.signal.aborted&&latestKey.current===key)setLoading(false)}
   },850);
   return()=>{clearTimeout(timer);controller.abort()};
- },[key,aiReady,retry]);
+ },[key,aiReady,retry,paused]);
  useEffect(()=>{fetch('/api/tryon',{cache:'no-store'}).then(r=>r.json()).then(d=>setAiReady(Boolean(d.configured))).catch(()=>setAiReady(false))},[]);
  function upload(f?:File){
   if(!f)return;
@@ -58,7 +59,7 @@ export default function FittingRoom(){
   <p className="mt-2 text-center text-[11px] leading-4 text-white/45">Select any clothing item: the mannequin updates automatically. AI images are previews, not sizing guarantees.</p>
   <p className={`mt-3 rounded-xl border p-2 text-xs ${aiReady===true?'border-emerald-400/25 bg-emerald-500/10 text-emerald-100':aiReady===false?'border-amber-400/25 bg-amber-500/10 text-amber-100':'border-white/10 bg-white/5 text-white/65'}`}>{aiReady===true?'✓ AI key loaded on server (not yet validated). Selecting clothes triggers a realistic preview automatically; API usage may incur charges.' :aiReady===false?'AI is not configured. Add IMAGE_API_KEY to .env.local and restart the server.':'Checking AI configuration…'}</p>
   {loading&&<p role="status" className="mt-3 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-center text-xs text-violet-200">Generating your outfit automatically…</p>}
-  {error&&hasItems&&aiReady&&<button onClick={()=>setRetry(n=>n+1)} className="pill mt-2 w-full text-xs">↻ Retry automatic preview</button>}
+  {error&&hasItems&&aiReady&&<button onClick={()=>{setPaused(false);setRetry(n=>n+1)}} className="pill mt-2 w-full text-xs">↻ Retry automatic preview</button>}
   {error&&<p role="alert" className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">{notice}</p>}
   {!error&&notice&&<p role="status" className="mt-2 text-xs text-violet-200">{notice}</p>}
   <div className="mt-4 flex items-center justify-between"><h3 className="text-sm font-bold">Your picks</h3><span className="text-xs text-white/45">{ids.length} / 5 pieces</span></div>
