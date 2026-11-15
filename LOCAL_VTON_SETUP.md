@@ -1,65 +1,66 @@
-# FITROOM: free local virtual try-on (experimental)
+# FITROOM: Free open-weight AI integration (experimental)
 
-FITROOM now has an optional **self-hosted** adapter for [FASHN VTON v1.5](https://github.com/fashn-AI/fashn-vton-1.5). The image model is open source; running it on your computer does not require an OpenAI API key or a per-image fee. Electricity, hardware and hosting are still costs.
+The FITROOM UI is intentionally unchanged. The model is now **Qwen/Qwen-Image-Edit-2511**, an open-weight Apache-2.0 image editor, running in a separate local Python service. There is no OpenAI API call or image-generation subscription. The adapter tries to apply **all selected slots**: top, outer jacket, trousers, shoes and hat. It also accepts user-uploaded garment photos.
 
-**Caution:** The upstream model documentation specifies **about 8 GB NVIDIA VRAM**. A 4 GB RTX 3050 Laptop GPU is not a suitable target. Check your actual GPU VRAM **before downloading several gigabytes of model weights**:
+**Important distinction:** Free model weights do not provide free cloud GPU compute. This large model requires significant GPU VRAM, system RAM and disk. It is not likely to work on an RTX 3050 Laptop with 4 GB VRAM. Some quantized third-party builds may lower requirements, but the sample adapter here uses the full model and has not been tested end-to-end.
+
+## 1. Check resources BEFORE installing
+
+In PowerShell:
 
 ```powershell
 nvidia-smi --query-gpu=name,memory.total --format=csv
 ```
 
-If it reports **less than 8 GB**, stop before installing the model. Use a separate machine with a suitable GPU or an available free GPU session for experiments (these are not guaranteed). The local adapter refuses to run on <7.5 GB by default; overriding this check is experimental and may produce out-of-memory failures.
+If it says less than 8 GB, **do not download the model** to this machine using these commands. The official fp16/bf16 model is large (Hugging Face repository roughly 58 GB including multiple weight variants and assets). In practice this adapter needs substantially more than 8 GB VRAM or heavy CPU offloading with adequate RAM. A capable desktop GPU or temporary free GPU session (when offered) would be needed for a realistic test; free hosted sessions have time limits and are not reliably always available.
 
-## Supported
+## 2. Install the service (on a suitable GPU machine only)
 
-- Upper garment (top / t-shirt) and bottom (trousers)
-- An outer garment (jacket) applied *after* the top. This is a sequential experimental approach; the model was trained for **one garment per invocation**, so multiple layers may not preserve all details.
-- Shoes and hats are **not supported** by the upstream model. They remain selected in the UI, but are not applied to the output image. The UI reports this honestly.
-- Neutral display mannequins may be less reliable than actual model photos because FASHN is optimized for person photos and pose detection.
-
-## Install (Windows PowerShell)
-
-Only proceed after confirming you have a suitable CUDA GPU. Use Python 3.10–3.12 (3.11 suggested). Run inside the existing FITROOM project root, where `package.json` is located:
+Use Windows PowerShell, Python 3.11 and your existing project directory. Create the service environment once:
 
 ```powershell
 cd "C:\Users\hamed\Desktop\fitroom-store-auto-tryon\fitroom"
 py -3.11 -m venv .\vton-service\.venv
 .\vton-service\.venv\Scripts\python.exe -m pip install --upgrade pip
-git clone https://github.com/fashn-AI/fashn-vton-1.5.git .\vton-service\upstream
-.\vton-service\.venv\Scripts\python.exe -m pip install -e .\vton-service\upstream
-.\vton-service\.venv\Scripts\python.exe -m pip install -r .\vton-service\requirements.txt
-.\vton-service\.venv\Scripts\python.exe .\vton-service\upstream\scripts\download_weights.py --weights-dir .\vton-service\weights
 ```
 
-The main weights are approximately **2 GB**, with other supporting files. Follow the official [PyTorch CUDA setup instructions](https://pytorch.org/get-started/locally/) if `torch.cuda.is_available()` returns false, and make sure the CUDA and ONNX Runtime GPU dependencies match your drivers. CPU mode is technically available using `VTON_ALLOW_CPU=1`, but may be impractically slow or require a lot of RAM.
+Install a PyTorch CUDA wheel compatible with the host's NVIDIA driver from [PyTorch official installation guide](https://pytorch.org/get-started/locally/), then install the remainder:
 
-## Run
+```powershell
+.\vton-service\.venv\Scripts\python.exe -m pip install -r .\vton-service\requirements.txt
+```
 
-Start **two terminals** in the existing project:
+The adapter downloads the open model weights on first real inference from Hugging Face; no API key is required for this public model. First-time model download and memory allocation can take considerable time and storage.
 
-Terminal A, local free AI:
+## 3. Run FITROOM and the local model
 
+Start two terminals.
+
+Terminal A (Python service):
 ```powershell
 cd "C:\Users\hamed\Desktop\fitroom-store-auto-tryon\fitroom\vton-service"
 .\.venv\Scripts\python.exe -m uvicorn server:app --host 127.0.0.1 --port 8765
 ```
 
-Test: http://127.0.0.1:8765/health should say `ready: true` when weights and GPU work.
-
-Terminal B, Next.js:
-
+Terminal B (Next.js, same installed dependencies):
 ```powershell
 cd "C:\Users\hamed\Desktop\fitroom-store-auto-tryon\fitroom"
 npm.cmd run dev
 ```
 
-Test http://localhost:3000/api/tryon : `configured: true` means the local model service is ready (not proof an inference completed). Select a top first and allow the image to generate. Successful image combinations cache to local `.cache/`.
+Test:
+- http://127.0.0.1:8765/health checks Python dependencies/GPU status, **not a successful image generation**.
+- http://localhost:3000/api/tryon checks that Next.js can reach the Python service.
+- In FITROOM click **Try on** once, then inspect both terminal windows for the actual first inference result.
 
-## Safety, privacy, and deployment
+## Current limitations and expectations
 
-- This local service binds to `127.0.0.1` only. Do not expose it directly on the public Internet.
-- Never upload model weights, personal photos, API keys or generated cache folders to GitHub.
-- Remove unused `IMAGE_API_KEY` from `.env.local`; the local route does not use it.
-- Vercel **cannot** connect to your laptop's `127.0.0.1`. A public deployed FITROOM needs a properly secured server with a GPU, authentication, request quotas, storage and abuse prevention. Such hosting normally costs money.
-- Licensing: upstream FASHN VTON v1.5 is Apache-2.0; one required parser inherits NVIDIA's SegFormer license, so review *all dependency licenses* before commercial deployment.
-- This is a development adapter. Its model-backed fitting quality, especially on our mannequin and with multiple garments, has not been validated end-to-end yet.
+- The UI and product layering rules remain identical. The backend handles every selected slot and its uploaded photo.
+- To keep the interface intact while working around a practical two-reference image editor, the backend re-renders selected garments **sequentially** (bottom, top, jacket, shoes, hat). Earlier items can drift or be overwritten; no exact-detail guarantee exists. For a production-grade complete outfit, later evaluation of a genuine multi-item try-on model is advisable.
+- We are not claiming the local model can run on your current laptop. A 4GB GPU is not sufficient for the unquantized model in this adapter. Avoid unnecessary downloads until hardware is checked.
+- The blank mannequin is a neutral reference, not a live 3D model. Image generation may not preserve 100% of brand logos or fit.
+- For a publicly accessible website, a GPU server and security controls (authentication, quotas and abuse protection) will be required, and hosting normally costs money.
+- Never expose Python port 8765 to the Internet, commit secrets or weights, or rely on a free demo API for production.
+
+Official model: https://huggingface.co/Qwen/Qwen-Image-Edit-2511 .
+Official implementation: https://github.com/QwenLM/Qwen-Image .
