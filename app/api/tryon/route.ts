@@ -47,13 +47,21 @@ export async function POST(req:Request){
    // No authentication headers or key are logged; only the service error.
    console.error('[tryon] image API status:',apiResponse.status,'error:',JSON.stringify(j.error||j));
    const status=apiResponse.status;
-   const message=status===401?'API key rejected. Check IMAGE_API_KEY in .env.local and restart the server.':
+   const code=String(j?.error?.code||'');
+   const quotaMessages:Record<string,string>={
+    credit_balance_exhausted:'Your API prepaid credit balance is exhausted. Check API billing; generating more images will not work until credits are available.',
+    organization_usage_limit_exceeded:'Your API organization usage limit has been reached. Check your approved API usage limits.',
+    organization_spend_limit_exceeded:'Your API organization spending limit has been reached. Ask the billing manager to review the limit.',
+    project_spend_limit_exceeded:'Your API project spending limit has been reached. Review this project\'s spending controls.',
+    insufficient_quota:'The API account has insufficient quota or credit. Review billing and spending limits.'
+   };
+   const message=status===429&&quotaMessages[code]?quotaMessages[code]:status===401?'API key rejected. Check IMAGE_API_KEY in .env.local and restart the server.':
     status===403?'The API project is not permitted to use this image model. Check model access or verification in your API dashboard.':
-    status===429?'Image API rate limit or credit limit reached. Check your API usage and billing settings.':
+    status===429?'OpenAI returned a 429 limit error. This may be a temporary request rate limit, depleted credits or a spending cap. Check the [tryon] error code in the server terminal and API Usage/Billing.':
     status===400?'The image API rejected the request. Check the terminal error for invalid image or model settings.':
     status>=500?'The image API is temporarily unavailable. Please retry later.':
     'AI image generation failed. Check the server terminal for more detail.';
-   return NextResponse.json({message},{status:502});
+   return NextResponse.json({message,paused:status===429,code:status===429?code:undefined},{status:502});
   }
   await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,Buffer.from(b64,'base64'));
   return NextResponse.json({image:'data:image/png;base64,'+b64});
