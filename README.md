@@ -1,47 +1,29 @@
-# FITROOM — automatic virtual fitting room
+# FITROOM — local open-source AI fitting room
 
-A Next.js clothing storefront with a virtual fitting room. Visitors can select products by clicking **Try on**, upload garment photos, and build a layered outfit (top, jacket, trousers, shoes, hat).
+A Next.js clothing store with a mannequin, garment selection and product upload. The AI fitting endpoint is now configured for **FASHN VTON v1.5** through a local Python service, rather than the paid OpenAI image API.
 
-## How to run — Windows PowerShell
+## Quick start
 
 ```powershell
 cd "C:\Users\hamed\Desktop\fitroom-store-auto-tryon\fitroom"
-npm.cmd install
+git pull origin main
 npm.cmd run dev
 ```
 
-Open http://localhost:3000. Install dependencies again only when package dependencies change.
+Open http://localhost:3000. Next.js works without the model, but realistic outfit previews require a running local AI model.
 
-## AI setup (private)
+**Start with [LOCAL_VTON_SETUP.md](LOCAL_VTON_SETUP.md)**. It explains VRAM checks, Python model installation, and the second local server.
 
-Create **.env.local** alongside package.json; do not commit or share it.
+## Limitations
 
-```dotenv
-IMAGE_API_KEY=YOUR_API_KEY_HERE
-IMAGE_MODEL=gpt-image-2.5-flare
-IMAGE_QUALITY=medium
-```
+- The model needs **about 8GB VRAM**; check your GPU before downloading weights.
+- The model supports tops, bottoms and one-piece clothes. The experimental multi-garment sequence applies bottom, top and then jacket; shoes and hats are not rendered by the model yet.
+- The blank display mannequin may not be recognized reliably; real-person photos are closer to the model's training data. It is not a true 3D renderer.
+- This integration has not yet been tested end-to-end with GPU inference on a real machine.
+- Product sample images and payments are demonstration-only.
+- A local free model does not mean public production deployment is free. GPU hosting costs money; never expose this service without security, quotas and authentication.
+- Keep all credentials, model weights and caches off GitHub. There is no need to create or add an `IMAGE_API_KEY` for the local model.
 
-Restart the development server after changes. Visit http://localhost:3000/api/tryon; `configured: true` **only confirms a key was loaded**, not that billing, access or generation is working.
+## Credits
 
-Trying on, replacing or removing an item triggers image generation automatically after a brief debounce. Successful combinations are cached. The blank mannequin stays visible until generation succeeds; errors remain visible rather than pretending the example reflects the selected clothing.
-
-## Known limitations
-
-- The current `public/mannequin.png` is a simple neutral **placeholder image**. It must be replaced with a good studio mannequin photo for an actually realistic starting screen. Updating prompts by itself cannot improve the static placeholder.
-- AI fitting images are approximate visual previews, not accurate clothing sizes or guaranteed product fidelity.
-- AI generation requires a working API key, model access and sufficient rate/credit allowance; requests can cost money.
-- Products are sample imagery and data in `public/products/` and `data/products.json`.
-- Checkout is a demo, and there is no true 3D / 360-degree fitting.
-- Before public launch, add user authentication, quotas, security checks and rate limiting to prevent unauthorized image-generation spending.
-- Server-side .cache is local only; hosting on serverless requires persistent storage.
-
-## GitHub workflow
-
-For code updates made to main, run:
-
-```powershell
-git pull origin main
-```
-
-Keep `.env.local`, `node_modules`, `.next` and `.cache` off GitHub.
+[FASHN VTON v1.5](https://github.com/fashn-AI/fashn-vton-1.5), Apache-2.0. Review licenses of included dependencies (including FASHN Human Parser/NVIDIA SegFormer) before commercial use.
