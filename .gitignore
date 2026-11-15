@@ -8,3 +8,10 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Local GPU model and Python environment
+vton-service/.venv/
+vton-service/upstream/
+vton-service/weights/
+vton-service/__pycache__/
+*.safetensors
