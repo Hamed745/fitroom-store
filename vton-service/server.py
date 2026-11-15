@@ -4,6 +4,7 @@ Install the upstream model separately; see LOCAL_VTON_SETUP.md.
 This is an experimental adapter, not an official FASHN API.
 """
 import base64
+import binascii
 import importlib.util
 import io
 import os
@@ -69,7 +70,7 @@ def _decode_image(encoded: str) -> Image.Image:
         if img.width * img.height > 16_000_000:
             raise ValueError("oversized dimensions")
         return img.convert("RGB")
-    except (ValueError, UnidentifiedImageError, OSError) as ex:
+    except (ValueError, binascii.Error, UnidentifiedImageError, OSError) as ex:
         raise HTTPException(status_code=400, detail="Invalid input image.") from ex
 
 def _get_pipeline():
