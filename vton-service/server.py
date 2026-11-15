@@ -1,7 +1,9 @@
-"""Local-only virtual try-on service using the upstream FASHN VTON v1.5 model.
+"""Experimental open-weight outfit image editor for FITROOM.
 
-Install the upstream model separately; see LOCAL_VTON_SETUP.md.
-This is an experimental adapter, not an official FASHN API.
+Qwen Image Edit 2511 processes each selected piece using the last composed image
+and a reference of the garment. This supports all five selection slots, but
+fidelity across successive edits is not guaranteed. Requires a powerful GPU.
+The service binds to localhost only and never calls a paid image API.
 """
 import base64
 import binascii
@@ -15,105 +17,143 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from PIL import Image, UnidentifiedImageError
 
-ROOT = Path(__file__).resolve().parent
-WEIGHTS_DIR = Path(os.getenv("VTON_WEIGHTS_DIR", str(ROOT / "weights"))).resolve()
+MODEL_ID = os.getenv("FITROOM_MODEL_ID", "Qwen/Qwen-Image-Edit-2511")
 MAX_INPUT_BYTES = 10 * 1024 * 1024
-SUPPORTED_LAYERS = {"bottom": "bottoms", "top": "tops", "outer": "tops"}
-app = FastAPI(title="FITROOM local VTON adapter")
-pipeline = None
-pipeline_lock = threading.Lock()
+MAX_PIXELS = 16_000_000
+LAYER_ORDER = ("bottom", "top", "outer", "shoes", "hat")
+DISPLAY_NAMES = {
+    "bottom": "trousers or pants",
+    "top": "shirt or T-shirt",
+    "outer": "jacket or outer layer",
+    "shoes": "shoes or sneakers",
+    "hat": "hat or cap",
+}
+app = FastAPI(title="FITROOM free local multi-item image editor")
+_model = None
+_lock = threading.Lock()
+
 
 class Garment(BaseModel):
     layer: str
     image: str = Field(max_length=14_000_000)
 
+
 class TryOnRequest(BaseModel):
     mannequin: str = Field(max_length=14_000_000)
-    garments: list[Garment] = Field(min_length=1, max_length=3)
+    garments: list[Garment] = Field(min_length=1, max_length=5)
 
-def _hardware_status():
-    if importlib.util.find_spec("torch") is None:
-        return False, "PyTorch has not been installed in the Python environment."
+
+def _status():
+    required = ("torch", "diffusers", "transformers", "accelerate")
+    missing = [name for name in required if importlib.util.find_spec(name) is None]
+    if missing:
+        return False, "Install local AI packages first: " + ", ".join(missing)
     import torch
     if not torch.cuda.is_available():
-        if os.getenv("VTON_ALLOW_CPU") == "1":
-            return True, "CPU mode enabled; rendering may be extremely slow."
-        return False, "CUDA GPU unavailable. Install compatible NVIDIA PyTorch/CUDA or use another GPU machine."
+        return False, "No CUDA-enabled NVIDIA GPU found. Free local image editing needs a suitable GPU."
     vram = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
-    if vram < 7.5 and os.getenv("VTON_ALLOW_LOW_VRAM") != "1":
-        return False, f"GPU has {vram:.1f} GB VRAM; model documentation specifies about 8 GB. This GPU is unlikely to fit the model."
-    return True, f"CUDA available with {vram:.1f} GB VRAM"
+    if vram < 8 and os.getenv("FITROOM_ALLOW_EXPERIMENTAL_LOW_VRAM") != "1":
+        return False, (
+            f"GPU has {vram:.1f} GB VRAM. This large multi-reference image model "
+            "is not expected to run reliably on this GPU, even with offloading. "
+            "Use a capable GPU machine to test it."
+        )
+    return True, (
+        f"Local AI dependencies found on {vram:.1f} GB GPU. "
+        "Model download/loading and successful outfit generation have not yet been verified."
+    )
 
-def _readiness():
-    if importlib.util.find_spec("fashn_vton") is None:
-        return False, "FASHN VTON is not installed. Follow LOCAL_VTON_SETUP.md."
-    if not (WEIGHTS_DIR / "model.safetensors").is_file():
-        return False, "Model weights not found. Run the upstream scripts/download_weights.py command."
-    return _hardware_status()
 
 @app.get("/health")
 def health():
-    ready, message = _readiness()
-    return {"ready": ready, "provider": "fashn-vton-1.5", "message": message}
+    ready, message = _status()
+    return {"ready": ready, "provider": "qwen-image-edit-2511-local", "message": message}
 
-def _decode_image(encoded: str) -> Image.Image:
-    if encoded.startswith("data:"):
-        encoded = encoded.partition(",")[2]
-    if len(encoded) > 14_000_000:
-        raise HTTPException(status_code=413, detail="Image payload is too large.")
+
+def _image(value: str) -> Image.Image:
+    payload = value.partition(",")[2] if value.startswith("data:") else value
     try:
-        raw = base64.b64decode(encoded, validate=True)
+        raw = base64.b64decode(payload, validate=True)
         if len(raw) > MAX_INPUT_BYTES:
-            raise ValueError("oversized")
-        img = Image.open(io.BytesIO(raw))
-        img.load()
-        if img.width * img.height > 16_000_000:
-            raise ValueError("oversized dimensions")
-        return img.convert("RGB")
-    except (ValueError, binascii.Error, UnidentifiedImageError, OSError) as ex:
-        raise HTTPException(status_code=400, detail="Invalid input image.") from ex
+            raise ValueError("Input image is too large")
+        image = Image.open(io.BytesIO(raw))
+        image.load()
+        if image.width * image.height > MAX_PIXELS:
+            raise ValueError("Image dimensions are too large")
+        return image.convert("RGB")
+    except (binascii.Error, ValueError, UnidentifiedImageError, OSError) as error:
+        raise HTTPException(status_code=400, detail="Could not decode one of the images.") from error
 
-def _get_pipeline():
-    global pipeline
-    if pipeline is None:
-        from fashn_vton import TryOnPipeline
-        pipeline = TryOnPipeline(weights_dir=str(WEIGHTS_DIR))
-    return pipeline
+
+def _pipeline():
+    global _model
+    if _model is None:
+        import torch
+        from diffusers import QwenImageEditPlusPipeline
+        _model = QwenImageEditPlusPipeline.from_pretrained(
+            MODEL_ID, torch_dtype=torch.bfloat16
+        )
+        # Trades GPU memory for CPU RAM and speed. Still a large model.
+        _model.enable_model_cpu_offload()
+        _model.set_progress_bar_config(disable=True)
+    return _model
+
+
+def _prompt(layer: str, selected: list[str]) -> str:
+    label = DISPLAY_NAMES[layer]
+    chosen = ", ".join(selected)
+    instructions = (
+        "Image 1 is the existing neutral display mannequin or its latest dressed rendering. "
+        "Image 2 is the reference product. Create a photorealistic full-body fashion "
+        f"e-commerce studio photograph, placing the exact {label} from image 2 "
+        "naturally on the mannequin in image 1. Preserve the existing mannequin's "
+        "pose, shape, camera angle and pale studio background. Preserve all other "
+        f"already-selected pieces ({chosen}) without changing their colors, graphics, "
+        "fabrics, logos, seams or placement. Respect natural layering: a jacket "
+        "goes over the shirt, trousers on legs, shoes on feet and hat on head. "
+        "Do not add other garments, accessories, text, facial features or hair. "
+        "Keep the whole figure in frame."
+    )
+    return instructions
+
 
 @app.post("/tryon")
-def tryon(req: TryOnRequest):
-    ready, message = _readiness()
+def tryon(body: TryOnRequest):
+    ready, message = _status()
     if not ready:
         raise HTTPException(status_code=503, detail=message)
-    if len({item.layer for item in req.garments}) != len(req.garments):
-        raise HTTPException(status_code=422, detail="Only one garment per layer is supported.")
-    if any(item.layer not in SUPPORTED_LAYERS for item in req.garments):
-        raise HTTPException(status_code=422, detail="This model supports tops, outerwear and bottoms, not hats or footwear.")
-    person = _decode_image(req.mannequin)
-    garments = {item.layer: _decode_image(item.image) for item in req.garments}
-    # Always start from the neutral reference; removing a garment must undo it.
-    # Layering quality is experimental: this is a single-garment model.
+    if len({g.layer for g in body.garments}) != len(body.garments):
+        raise HTTPException(status_code=422, detail="Only one garment per outfit slot is allowed.")
+    if any(g.layer not in LAYER_ORDER for g in body.garments):
+        raise HTTPException(status_code=422, detail="Unknown outfit slot.")
+    person = _image(body.mannequin)
+    garments = {g.layer: _image(g.image) for g in body.garments}
+    already_applied = []
     try:
-        with pipeline_lock:
-            model = _get_pipeline()
-            for layer in ("bottom", "top", "outer"):
+        import torch
+        with _lock, torch.inference_mode():
+            pipeline = _pipeline()
+            for layer in LAYER_ORDER:
                 if layer not in garments:
                     continue
-                output = model(
-                    person_image=person,
-                    garment_image=garments[layer],
-                    category=SUPPORTED_LAYERS[layer],
-                    garment_photo_type="flat-lay",
-                    num_timesteps=25,
+                image_refs = [person, garments[layer]]
+                result = pipeline(
+                    image=image_refs,
+                    prompt=_prompt(layer, already_applied),
+                    negative_prompt=" ",
+                    guidance_scale=1.0,
+                    true_cfg_scale=4.0,
+                    num_inference_steps=25,
+                    num_images_per_prompt=1,
                 )
-                person = output.images[0].convert("RGB")
-    except RuntimeError as ex:
-        if "out of memory" in str(ex).lower():
-            raise HTTPException(status_code=507, detail="Not enough GPU VRAM for this model. Approximately 8GB is recommended.") from ex
-        raise HTTPException(status_code=502, detail="Local model inference failed; check the Python terminal.") from ex
-    except Exception as ex:
-        raise HTTPException(status_code=502, detail="Local model inference failed; check the Python terminal.") from ex
-
-    buf = io.BytesIO()
-    person.save(buf, format="PNG")
-    return {"image": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")}
+                person = result.images[0].convert("RGB")
+                already_applied.append(DISPLAY_NAMES[layer])
+    except RuntimeError as error:
+        if "out of memory" in str(error).lower():
+            raise HTTPException(status_code=507, detail="Not enough GPU/CPU memory for this large open model.") from error
+        raise HTTPException(status_code=502, detail="Local image editing failed. Check the Python terminal.") from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Local image editing failed. Check the Python terminal.") from error
+    output = io.BytesIO()
+    person.save(output, format="PNG")
+    return {"image": "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")}
