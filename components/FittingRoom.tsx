@@ -19,7 +19,7 @@ export default function FittingRoom(){
   if(cached){setImage(cached);setRenderedKey(key);setLoading(false);return}
   setImage(null);setRenderedKey('');
   if(aiReady===false){setLoading(false);setError(true);setNotice(engineMessage);return}
-  if(paused){setLoading(false);setError(true);setNotice('Automatic previews have been paused after an AI service refusal. Check the message below before attempting another request.');return}
+  if(paused){setLoading(false);setError(true);setNotice(safetyBlocked?'Cloudflare blocked this image under its content safety rules. No image was generated. Choose a different compliant reference mannequin or another try-on service.':'Automatic previews are paused after an AI service error. Review the error before retrying.');return}
   if(aiReady===null){setLoading(false);return}
   const controller=new AbortController();
   setLoading(true);
@@ -36,7 +36,7 @@ export default function FittingRoom(){
    }finally{if(!controller.signal.aborted&&latestKey.current===key)setLoading(false)}
   },850);
   return()=>{clearTimeout(timer);controller.abort()};
- },[key,aiReady,retry,paused,engineMessage]);
+ },[key,aiReady,retry,paused,safetyBlocked,engineMessage]);
  async function checkService(){
   try {
    const r=await fetch('/api/tryon',{cache:'no-store'});
