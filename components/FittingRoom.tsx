@@ -5,7 +5,7 @@ import {Close} from './Icons';
 const cache=new Map<string,string>();
 const names:Record<Slot,string>={top:'Top / T-shirt',outer:'Jacket / outerwear',bottom:'Trousers',shoes:'Shoes',hat:'Hat'};
 export default function FittingRoom(){
- const s=useStore(),[image,setImage]=useState<string|null>(null),[renderedKey,setRenderedKey]=useState(''),[loading,setLoading]=useState(false),[zoom,setZoom]=useState(false),[slot,setSlot]=useState<Slot>('top'),[notice,setNotice]=useState(''),[error,setError]=useState(false),[aiReady,setAiReady]=useState<boolean|null>(null),[retry,setRetry]=useState(0),[paused,setPaused]=useState(false),[safetyBlocked,setSafetyBlocked]=useState(false),[engineMessage,setEngineMessage]=useState('Checking local AI service...');
+ const s=useStore(),[image,setImage]=useState<string|null>(null),[renderedKey,setRenderedKey]=useState(''),[loading,setLoading]=useState(false),[zoom,setZoom]=useState(false),[slot,setSlot]=useState<Slot>('top'),[notice,setNotice]=useState(''),[error,setError]=useState(false),[aiReady,setAiReady]=useState<boolean|null>(null),[retry,setRetry]=useState(0),[paused,setPaused]=useState(false),[safetyBlocked,setSafetyBlocked]=useState(false),[engineMessage,setEngineMessage]=useState('Checking Cloudflare AI settings...');
  const latestKey=useRef('');
  const ids=SLOTS.map(k=>s.outfit[k]).filter(Boolean) as string[],key=SLOTS.map(k=>s.outfit[k]||'-').join('|');
  const hasItems=ids.length>0,current=renderedKey===key&&!!image;
@@ -19,7 +19,7 @@ export default function FittingRoom(){
   if(cached){setImage(cached);setRenderedKey(key);setLoading(false);return}
   setImage(null);setRenderedKey('');
   if(aiReady===false){setLoading(false);setError(true);setNotice(engineMessage);return}
-  if(paused){setLoading(false);setError(true);setNotice(safetyBlocked?'Cloudflare blocked this image under its content safety rules. No image was generated. Choose a different compliant reference mannequin or another try-on service.':'Automatic previews are paused after an AI service error. Review the error before retrying.');return}
+  if(paused){setLoading(false);setError(true);setNotice(safetyBlocked?'Cloudflare blocked this image under its content safety rules. No image was generated. Choose a different compliant reference mannequin or another try-on service.':'Cloudflare returned an AI service error. Automatic attempts are paused to protect your free quota. Check the server log and service status before retrying.');return}
   if(aiReady===null){setLoading(false);return}
   const controller=new AbortController();
   setLoading(true);
