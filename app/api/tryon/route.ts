@@ -2,6 +2,7 @@ import {NextResponse} from 'next/server';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+import sharp from 'sharp';
 import products from '@/data/products.json';
 
 export const runtime='nodejs';
@@ -9,8 +10,8 @@ export const maxDuration=300;
 
 // Cloudflare Workers AI: FLUX.2 Klein 4B image editor.
 // References MUST be named input_image_0..3 (not image[]).
-// Each input image must be smaller than 512x512; products are 412x412,
-// and custom uploads are resized client-side to <=480px.
+// Cloudflare requires EVERY input reference (including previously generated images)
+// to be smaller than 512x512. Normalize inputs server-side before each pass.
 const AVAILABLE_MODELS=[
  '@cf/black-forest-labs/flux-2-klein-4b',
  '@cf/black-forest-labs/flux-2-klein-9b',
@@ -47,7 +48,15 @@ function decodeOutput(payload:any):{image:string;bytes:Buffer}{
  return {image:mime?'data:'+mime+';base64,'+b64:'',bytes};
 }
 
-async function renderPass(accountId:string,token:string,input:Buffer,baseMime:string,parts:Part[],already:Part[]):Promise<{image:string;bytes:Buffer}>{
+async function referenceImage(buffer:Buffer):Promise<Buffer>{
+ // Convert all input references to a 480px JPEG, keeping each dimension below 512.
+ // This is especially important on the SECOND edit pass: model outputs can be 768x1024.
+ return await sharp(buffer,{limitInputPixels:16000000})
+  .rotate().resize({width:480,height:480,fit:'inside',withoutEnlargement:true})
+  .flatten({background:'#eeeeee'}).jpeg({quality:88}).toBuffer();
+}
+
+async function renderPass(accountId:string,token:string,input:Buffer,parts:Part[],already:Part[],passNumber:number):Promise<{image:string;bytes:Buffer}>{
  if(parts.length>3)throw new Error('Internal: maximum three garments per edit pass.');
  const form=new FormData();
  const baseDescription=already.length?
@@ -64,11 +73,13 @@ async function renderPass(accountId:string,token:string,input:Buffer,baseMime:st
   ' Preserve a full-body commercial studio composition. NEVER substitute grey patterned clothing for black or navy reference items.';
  form.append('prompt',prompt);
  form.append('width','768');form.append('height','1024');
- form.append('input_image_0',new Blob([new Uint8Array(input)],{type:baseMime}),'base.'+(baseMime==='image/png'?'png':'jpg'));
+ const base=await referenceImage(input);
+ form.append('input_image_0',new Blob([new Uint8Array(base)],{type:'image/jpeg'}),'mannequin.jpg');
  for(let i=0;i<parts.length;i++){
   const p=parts[i];
-  form.append('input_image_'+(i+1),new Blob([new Uint8Array(p.image)],{type:p.mime}),
-   'garment-'+(i+1)+'.'+(p.mime==='image/webp'?'webp':p.mime==='image/jpeg'?'jpg':'png'));
+  const garment=await referenceImage(p.image);
+  form.append('input_image_'+(i+1),new Blob([new Uint8Array(garment)],{type:'image/jpeg'}),
+   'garment-'+(i+1)+'.jpg');
  }
  const response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(accountId)+'/ai/run/'+MODEL,{
   method:'POST',headers:{Authorization:'Bearer '+token},body:form,
@@ -78,7 +89,7 @@ async function renderPass(accountId:string,token:string,input:Buffer,baseMime:st
  if(!response.ok||body?.success===false){
   const explanation=body?.errors?.[0]?.message||body?.result?.message||'Cloudflare image editing request failed.';
   const requestId=response.headers.get('cf-ray')||response.headers.get('x-request-id')||'not-provided';
-  console.error('[fitroom-cloudflare] HTTP',response.status,'model',MODEL,'request id',requestId,'error:',String(explanation).slice(0,600));
+  console.error('[fitroom-cloudflare] pass',passNumber,'garments',parts.map(p=>p.layer),'HTTP',response.status,'model',MODEL,'request id',requestId,'error:',String(explanation).slice(0,600));
   const flagged=/output has been flagged|input image combination|safety filter|content policy|moderation/i.test(String(explanation));
   const serviceFailure=response.status>=500;
   const friendly=flagged?
@@ -129,7 +140,7 @@ export async function POST(request:Request){
   parts.sort((a,b)=>LAYERS.indexOf(a.layer)-LAYERS.indexOf(b.layer));
 
   const mannequin=await fs.readFile(path.join(process.cwd(),'public','mannequin-photo.jpg'));
-  const hash=crypto.createHash('sha256').update('cloudflare-flux2-product-accuracy-trial-v4').update(MODEL).update(mannequin);
+  const hash=crypto.createHash('sha256').update('cloudflare-flux2-reference-resize-v5').update(MODEL).update(mannequin);
   parts.forEach(p=>hash.update(p.id+p.name+p.layer).update(p.image));
   const cacheFile=path.join(process.cwd(),'.cache','flux-'+hash.digest('hex')+'.png');
   try{
@@ -138,14 +149,13 @@ export async function POST(request:Request){
    if(img.image)return NextResponse.json({image:img.image,model:MODEL,source:'cache',verified:false});
   }catch{}
 
-  let current=mannequin,baseMime='image/jpeg',encoded='';
+  let current=mannequin,encoded='';
   let already:Part[]=[];
   for(let start=0;start<parts.length;start+=3){
    const group=parts.slice(start,start+3);
-   const result=await renderPass(process.env.CLOUDFLARE_ACCOUNT_ID!,process.env.CLOUDFLARE_API_TOKEN!,current,baseMime,group,already);
+   const result=await renderPass(process.env.CLOUDFLARE_ACCOUNT_ID!,process.env.CLOUDFLARE_API_TOKEN!,current,group,already,Math.floor(start/3)+1);
    current=result.bytes;
    encoded=result.image;
-   baseMime=encoded.startsWith('data:image/jpeg')?'image/jpeg':encoded.startsWith('data:image/webp')?'image/webp':'image/png';
    already=already.concat(group);
   }
   // Cache all successful outputs but do not claim exact product fidelity.
