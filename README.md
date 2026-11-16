@@ -36,3 +36,11 @@ Cloudflare Workers AI gives a limited free daily quota, and requests stop when e
 Cloudflare docs: https://developers.cloudflare.com/workers-ai/models/flux-2-klein-4b/ .
 
 The old experimental Python `vton-service` folder is not used by this Cloudflare integration. Checkout is still a demo, not live payments.
+
+## Cloudflare multi-item reference image fix (November 2026)
+
+Cloudflare FLUX.2 Klein requires each input image reference to be **smaller than 512x512 pixels**. The prior FITROOM implementation reused the full 768x1024 first-pass result as a reference for the second pass (four or five selected pieces). The server now resizes **every** reference, including generated previews, to fit within 480x480 using `sharp` before submission; final output is still generated at 768x1024. This addresses a likely input-size failure, but does **not** guarantee that Cloudflare will accept requests or preserve garment designs.
+
+This adds an npm dependency. After pulling this commit once run `npm.cmd install` and restart the Next.js server. On subsequent code-only updates, installation is unnecessary. If a repository checkout uses `npm ci`, update/commit `package-lock.json` to match `package.json` first.
+
+Start by trying **one garment**. If it succeeds, try two, then four. Cloudflare still has safety filters and possible service errors; do not repeatedly retry unsuccessful jobs or interpret a generated image as a faithful product fitting.
