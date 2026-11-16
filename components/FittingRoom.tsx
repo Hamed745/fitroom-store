@@ -29,7 +29,7 @@ export default function FittingRoom(){
     const d=await res.json();
     if(!res.ok||!d.image){if(d.paused)setPaused(true);throw new Error(d.message||'Image generation failed.')}
     cache.set(key,d.image);
-    if(latestKey.current===key){setImage(d.image);setRenderedKey(key);setNotice(Array.isArray(d.warnings)&&d.warnings.length?d.warnings.join(' '):'Your selected clothing preview is ready.')}
+    if(latestKey.current===key){setImage(d.image);setRenderedKey(key);setNotice(Array.isArray(d.warnings)&&d.warnings.length?d.warnings.join(' '):'AI concept preview generated. Check it against the selected product photos: garment colors, graphics and styling are NOT verified.')}
    }catch(e){
     if(controller.signal.aborted||latestKey.current!==key)return;
     setError(true);setNotice(e instanceof Error?e.message:'Image generation unavailable.');
@@ -59,13 +59,14 @@ export default function FittingRoom(){
  return <aside aria-label="Fitting room" className="fixed inset-0 z-50 overflow-y-auto bg-[#121019] p-4 shadow-2xl lg:sticky lg:top-24 lg:z-auto lg:max-h-[calc(100vh-7rem)] lg:rounded-[24px] lg:border lg:border-violet-400/30 lg:bg-[#17131f] lg:p-4 lg:shadow-[0_10px_70px_rgba(63,26,122,.13)]">
   <div className="mb-3 flex items-start justify-between gap-3"><div><div className="mb-1 text-[10px] font-semibold uppercase tracking-[.20em] text-violet-300">YOUR STYLE STUDIO</div><h2 className="text-xl font-extrabold">Fitting room</h2><p className="mt-1 text-xs text-white/50">Build your look, layer by layer.</p></div><button className="chip" aria-label="Close fitting room" onClick={()=>s.setPanel(false)}><Close/></button></div>
   <div className="relative mx-auto max-w-[350px] overflow-hidden rounded-[17px] border border-white/10 bg-[#dedcde]">
-   <img src={current?image!:'/mannequin-photo.jpg'} alt={current?'AI generated outfit with your selected clothing':'Neutral mannequin without selected clothes'} className="aspect-[.65] w-full object-cover object-top"/>
+   <img src={current?image!:'/mannequin-photo.jpg'} alt={current?'Unverified AI outfit concept, compare with selected product photos':'Neutral mannequin without selected clothes'} className="aspect-[.65] w-full object-cover object-top"/>
+   {current&&<span className="absolute left-3 top-3 rounded-full border border-amber-400/30 bg-black/80 px-3 py-1.5 text-[10px] font-bold text-amber-100">AI CONCEPT · CHECK ITEMS</span>}
    {!current&&<span className="absolute left-3 top-3 rounded-full border border-black/10 bg-white/90 px-3 py-1.5 text-[10px] font-bold text-zinc-800">{hasItems?'PREPARING YOUR SELECTED OUTFIT':'BLANK MANNEQUIN — CHOOSE CLOTHES'}</span>}
    {loading&&<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-[3px]" role="status"><span className="h-9 w-9 animate-spin rounded-full border-4 border-violet-300/30 border-t-violet-400"/><span className="text-sm font-semibold">Automatically dressing your mannequin...</span><span className="text-xs text-white/70">This can take a moment</span></div>}
    <button aria-label="Expand mannequin image" onClick={()=>setZoom(true)} className="absolute bottom-3 right-3 rounded-full border border-white/15 bg-black/65 px-3 py-2 text-xs font-semibold">⛶ Zoom</button>
   </div>
-  <p className="mt-2 text-center text-[11px] leading-4 text-white/45">Select any clothing item: the mannequin updates automatically. AI images are previews, not sizing guarantees.</p>
-  <p className={`mt-3 rounded-xl border p-2 text-xs ${aiReady===true?'border-emerald-400/25 bg-emerald-500/10 text-emerald-100':aiReady===false?'border-amber-400/25 bg-amber-500/10 text-amber-100':'border-white/10 bg-white/5 text-white/65'}`}>{aiReady===true?'✓ Local open-weight image editor dependencies detected. All five clothing slots are supported by the experimental backend. Select clothes to test the model; loading and generation are not yet verified. No paid image API is used.' :aiReady===false?engineMessage:'Checking the free local AI service…'}</p>
+  <p className="mt-2 text-center text-[11px] leading-4 text-white/45">Select any clothing item to generate an AI outfit concept. Compare the image to Your picks: colors, logos and items may be wrong.</p>
+  <p className={`mt-3 rounded-xl border p-2 text-xs ${aiReady===true?'border-emerald-400/25 bg-emerald-500/10 text-emerald-100':aiReady===false?'border-amber-400/25 bg-amber-500/10 text-amber-100':'border-white/10 bg-white/5 text-white/65'}`}>{aiReady===true?'✓ AI credentials/server detected. This confirms connection only; generated images are not guaranteed to match your product photos.' :aiReady===false?engineMessage:'Checking the free local AI service…'}</p>
   {aiReady===false&&<button onClick={()=>void checkService()} className="pill mt-2 w-full text-xs">↻ Check local AI connection</button>}
   {loading&&<p role="status" className="mt-3 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-center text-xs text-violet-200">Generating your outfit automatically…</p>}
   {error&&hasItems&&aiReady&&<button onClick={()=>{setPaused(false);setRetry(n=>n+1)}} className="pill mt-2 w-full text-xs">↻ Retry automatic preview</button>}
