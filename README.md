@@ -1,12 +1,20 @@
-# FITROOM — virtual fitting room with open-weight AI
+# FITROOM — Virtual Fitting Room
 
-The premium Next.js storefront and its virtual fitting room retain the same features and styling: blank mannequin, automatic try-on when selecting an item, jackets over tops, trousers, shoes, hats, uploads of personal garment photos, selected-piece thumbnails, zoom and cart.
+Responsive Next.js shop with the same fitting-room UI, automatic garment selection, upload, thumbnails and zoom. A Cloudflare Workers AI image editing backend is in `app/api/tryon/route.ts`.
 
-The backend now uses an **experimental local Qwen Image Edit 2511 adapter** in `vton-service/` instead of paid OpenAI API or the limited single-garment FASHN VTON backend. It can accept all five selected pieces but applies them in separate passes; composition quality and item fidelity have **not yet been verified**. Open weights are free to use under Apache-2.0; the hardware/hosting is not necessarily free.
+**Important:** FLUX.2 Klein is a general-purpose image editor, NOT a specialized virtual try-on model. It can invent clothes or change colors/logos. Generated concepts are labeled as **UNVERIFIED** and must be compared with original product photos. This is an experimental preview, not a verified try-on or clothing sizing tool.
 
-Read **[LOCAL_VTON_SETUP.md](LOCAL_VTON_SETUP.md)** before installing any model or downloading large weights. The full model is too demanding for common 4GB laptop GPUs and will not be an always-free public API. Do not download it on unsuitable hardware.
+## Local setup
 
-## Local Next.js UI
+Create `.env.local` alongside `package.json` (never share or commit it):
+
+```dotenv
+CLOUDFLARE_ACCOUNT_ID=YOUR_ACCOUNT_ID
+CLOUDFLARE_API_TOKEN=YOUR_WORKERS_AI_TOKEN
+CLOUDFLARE_AI_MODEL=@cf/black-forest-labs/flux-2-klein-4b
+```
+
+In Windows PowerShell:
 
 ```powershell
 cd "C:\Users\hamed\Desktop\fitroom-store-auto-tryon\fitroom"
@@ -14,10 +22,17 @@ git pull origin main
 npm.cmd run dev
 ```
 
-The UI works without the AI service; realistic image updates require a successfully running image-editing backend. A missing local service results in a clear status notice, not a silent fake update.
+Open http://localhost:3000/api/tryon . `configured:true` means credentials are **present, not necessarily valid**.
 
-No OpenAI `IMAGE_API_KEY` is needed. Keep any old `.env.local` credentials private or remove the unused key from your local file. Never commit secrets to GitHub.
+## Diagnose poor garment fidelity
 
-### For production
+1. Select only one T-shirt and compare its color, graphics and shape against the thumbnail.
+2. The default model is `@cf/black-forest-labs/flux-2-klein-4b`. Try one comparison with `@cf/black-forest-labs/flux-2-klein-9b` by changing only `CLOUDFLARE_AI_MODEL` in `.env.local` and restarting Next.js; the 9B model uses much more free-tier compute and still does **not** guarantee accurate clothing transfer.
+3. On Windows, refresh the browser to clear the client-side session cache after changing models. The server-side cache is separated by model and prompt version.
+4. If a single garment is incorrect with both models, stop repeated generation and consider a purpose-built virtual try-on solution rather than spending the free daily quota on inaccurate images.
 
-Protect AI compute behind authentication, quotas and rate limits; add persistent caches. Checkout remains demo-only. Generated image previews do not certify garment sizing or fit.
+Cloudflare Workers AI gives a limited free daily quota, and requests stop when exceeded on the Free plan; public usage needs server-side protections and quotas.
+
+Cloudflare docs: https://developers.cloudflare.com/workers-ai/models/flux-2-klein-4b/ .
+
+The old experimental Python `vton-service` folder is not used by this Cloudflare integration. Checkout is still a demo, not live payments.
