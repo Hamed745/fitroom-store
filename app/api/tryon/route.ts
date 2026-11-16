@@ -11,7 +11,13 @@ export const maxDuration=300;
 // References MUST be named input_image_0..3 (not image[]).
 // Each input image must be smaller than 512x512; products are 412x412,
 // and custom uploads are resized client-side to <=480px.
-const MODEL='@cf/black-forest-labs/flux-2-klein-4b';
+const AVAILABLE_MODELS=[
+ '@cf/black-forest-labs/flux-2-klein-4b',
+ '@cf/black-forest-labs/flux-2-klein-9b',
+] as const;
+const requestedModel=process.env.CLOUDFLARE_AI_MODEL;
+const MODEL=AVAILABLE_MODELS.includes(requestedModel as typeof AVAILABLE_MODELS[number])
+ ? requestedModel! : AVAILABLE_MODELS[0];
 const LAYERS=['bottom','top','outer','shoes','hat'] as const;
 type Layer=typeof LAYERS[number];
 type Part={id:string;name:string;layer:Layer;image:Buffer;mime:string};
@@ -21,7 +27,7 @@ const catalog=products as Array<{id:string;name:string;layer:string;image:string
 function status(){
  const configured=Boolean(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN);
  return {configured,provider:'cloudflare-workers-ai',model:MODEL,
-  message:configured?'Cloudflare credentials loaded (not yet validated). Multi-reference image edit is enabled.':
+  message:configured?'Cloudflare credentials are configured (not yet validated). Model '+MODEL+' generates experimental images, not verified copies of products.':
    'Add CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN to .env.local and restart Next.js.'};
 }
 
@@ -45,17 +51,17 @@ async function renderPass(accountId:string,token:string,input:Buffer,baseMime:st
  if(parts.length>3)throw new Error('Internal: maximum three garments per edit pass.');
  const form=new FormData();
  const baseDescription=already.length?
-  'Image 0 is a PREVIOUSLY DRESSED VERSION of the same featureless mannequin. KEEP every item already worn completely unchanged.':
-  'Image 0 is the BLANK white featureless studio mannequin. Preserve its pose, head, silhouette, background and camera framing.';
+  'Image 0 is the same mannequin with previously selected garments. EDIT ONLY the garment(s) requested in the reference photos. Preserve the visible earlier garment colors and details without redesigning them.':
+  'Image 0 is the BLANK white featureless studio mannequin. DO NOT invent other garments or graphic designs. Preserve the exact pose, silhouette, background and framing.';
  const references=parts.map((p,i)=>'Image '+(i+1)+' is the EXACT '+p.layer+' product named '+JSON.stringify(p.name)+'.').join(' ');
  const previous=already.length?'Previously fitted garments (preserve): '+already.map(p=>p.layer+' '+JSON.stringify(p.name)).join('; ')+'.':'';
  const prompt=baseDescription+' '+references+' '+previous+
-  ' Dress the SAME mannequin in ONLY the products shown in the provided reference photos. '+
-  ' The actual reference images define the garment appearance, not your imagination. '+
+  ' This is a clothing PRODUCT TRANSFER task, not fashion design or outfit inspiration. Dress the SAME mannequin in ONLY the exact reference products. '+
+  ' The actual product photos define fabric color, silhouette and placement. If there is uncertainty, use a simple unbranded clothing construction rather than invent a graphic or logo. '+
   ' Transfer the precise garment COLOR, SHAPE, PRINT, LOGO, TRIM and texture; do not substitute unrelated clothing. '+
   ' Outer jacket goes OVER the shirt, shirt visible underneath. Bottoms cover legs, shoes on feet, hats on head. '+
   ' Keep all earlier items unchanged. Do not invent extra accessories, text, brands, facial features or hair. '+
-  ' Preserve a full-body commercial studio composition.';
+  ' Preserve a full-body commercial studio composition. NEVER substitute grey patterned clothing for black or navy reference items.';
  form.append('prompt',prompt);
  form.append('width','768');form.append('height','1024');
  form.append('input_image_0',new Blob([new Uint8Array(input)],{type:baseMime}),'base.'+(baseMime==='image/png'?'png':'jpg'));
@@ -117,7 +123,7 @@ export async function POST(request:Request){
   parts.sort((a,b)=>LAYERS.indexOf(a.layer)-LAYERS.indexOf(b.layer));
 
   const mannequin=await fs.readFile(path.join(process.cwd(),'public','mannequin-photo.jpg'));
-  const hash=crypto.createHash('sha256').update('cloudflare-flux2-image-input-fix-v3').update(MODEL).update(mannequin);
+  const hash=crypto.createHash('sha256').update('cloudflare-flux2-product-accuracy-trial-v4').update(MODEL).update(mannequin);
   parts.forEach(p=>hash.update(p.id+p.name+p.layer).update(p.image));
   const cacheFile=path.join(process.cwd(),'.cache','flux-'+hash.digest('hex')+'.png');
   try{
@@ -140,7 +146,7 @@ export async function POST(request:Request){
   await fs.mkdir(path.dirname(cacheFile),{recursive:true});
   await fs.writeFile(cacheFile,current);
   return NextResponse.json({image:encoded,model:MODEL,verified:false,source:'cloudflare',
-   message:'AI image generated using real product references. Check visual accuracy: the model may still alter details.'});
+   message:'Experimental image only — garment details have not been verified. Compare all pieces with product thumbnails.'});
  }catch(error){
   const msg=error instanceof Error?error.message:'Image edit failed.';
   console.error('[fitroom-cloudflare] request failed:',msg.slice(0,350));
