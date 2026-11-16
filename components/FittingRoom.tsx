@@ -5,7 +5,7 @@ import {Close} from './Icons';
 const cache=new Map<string,string>();
 const names:Record<Slot,string>={top:'Top / T-shirt',outer:'Jacket / outerwear',bottom:'Trousers',shoes:'Shoes',hat:'Hat'};
 export default function FittingRoom(){
- const s=useStore(),[image,setImage]=useState<string|null>(null),[renderedKey,setRenderedKey]=useState(''),[loading,setLoading]=useState(false),[zoom,setZoom]=useState(false),[slot,setSlot]=useState<Slot>('top'),[notice,setNotice]=useState(''),[error,setError]=useState(false),[aiReady,setAiReady]=useState<boolean|null>(null),[retry,setRetry]=useState(0),[paused,setPaused]=useState(false),[engineMessage,setEngineMessage]=useState('Checking local AI service...');
+ const s=useStore(),[image,setImage]=useState<string|null>(null),[renderedKey,setRenderedKey]=useState(''),[loading,setLoading]=useState(false),[zoom,setZoom]=useState(false),[slot,setSlot]=useState<Slot>('top'),[notice,setNotice]=useState(''),[error,setError]=useState(false),[aiReady,setAiReady]=useState<boolean|null>(null),[retry,setRetry]=useState(0),[paused,setPaused]=useState(false),[safetyBlocked,setSafetyBlocked]=useState(false),[engineMessage,setEngineMessage]=useState('Checking local AI service...');
  const latestKey=useRef('');
  const ids=SLOTS.map(k=>s.outfit[k]).filter(Boolean) as string[],key=SLOTS.map(k=>s.outfit[k]||'-').join('|');
  const hasItems=ids.length>0,current=renderedKey===key&&!!image;
@@ -19,7 +19,7 @@ export default function FittingRoom(){
   if(cached){setImage(cached);setRenderedKey(key);setLoading(false);return}
   setImage(null);setRenderedKey('');
   if(aiReady===false){setLoading(false);setError(true);setNotice(engineMessage);return}
-  if(paused){setLoading(false);setError(true);setNotice('Automatic previews are paused after a local service error. Check the Python server and use Retry.');return}
+  if(paused){setLoading(false);setError(true);setNotice('Automatic previews have been paused after an AI service refusal. Check the message below before attempting another request.');return}
   if(aiReady===null){setLoading(false);return}
   const controller=new AbortController();
   setLoading(true);
@@ -27,7 +27,7 @@ export default function FittingRoom(){
    try{
     const res=await fetch('/api/tryon',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({ids,custom:Object.fromEntries(ids.filter(i=>i.startsWith('custom-')).map(i=>[i,{name:byId(i).name,layer:byId(i).layer,image:byId(i).image}]))})});
     const d=await res.json();
-    if(!res.ok||!d.image){if(d.paused)setPaused(true);throw new Error(d.message||'Image generation failed.')}
+    if(!res.ok||!d.image){if(d.paused){setPaused(true);if(d.code==='CONTENT_FILTERED')setSafetyBlocked(true)}throw new Error(d.message||'Image generation failed.')}
     cache.set(key,d.image);
     if(latestKey.current===key){setImage(d.image);setRenderedKey(key);setNotice(Array.isArray(d.warnings)&&d.warnings.length?d.warnings.join(' '):'AI concept preview generated. Check it against the selected product photos: garment colors, graphics and styling are NOT verified.')}
    }catch(e){
@@ -66,10 +66,10 @@ export default function FittingRoom(){
    <button aria-label="Expand mannequin image" onClick={()=>setZoom(true)} className="absolute bottom-3 right-3 rounded-full border border-white/15 bg-black/65 px-3 py-2 text-xs font-semibold">⛶ Zoom</button>
   </div>
   <p className="mt-2 text-center text-[11px] leading-4 text-white/45">Select any clothing item to generate an AI outfit concept. Compare the image to Your picks: colors, logos and items may be wrong.</p>
-  <p className={`mt-3 rounded-xl border p-2 text-xs ${aiReady===true?'border-emerald-400/25 bg-emerald-500/10 text-emerald-100':aiReady===false?'border-amber-400/25 bg-amber-500/10 text-amber-100':'border-white/10 bg-white/5 text-white/65'}`}>{aiReady===true?'✓ AI credentials/server detected. This confirms connection only; generated images are not guaranteed to match your product photos.' :aiReady===false?engineMessage:'Checking the free local AI service…'}</p>
+  <p className={`mt-3 rounded-xl border p-2 text-xs ${aiReady===true?'border-emerald-400/25 bg-emerald-500/10 text-emerald-100':aiReady===false?'border-amber-400/25 bg-amber-500/10 text-amber-100':'border-white/10 bg-white/5 text-white/65'}`}>{aiReady===true?'✓ AI credentials/server detected. This confirms connection only; generated images are not guaranteed to match your product photos.' :aiReady===false?engineMessage:'Checking Cloudflare AI configuration…'}</p>
   {aiReady===false&&<button onClick={()=>void checkService()} className="pill mt-2 w-full text-xs">↻ Check local AI connection</button>}
   {loading&&<p role="status" className="mt-3 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-center text-xs text-violet-200">Generating your outfit automatically…</p>}
-  {error&&hasItems&&aiReady&&<button onClick={()=>{setPaused(false);setRetry(n=>n+1)}} className="pill mt-2 w-full text-xs">↻ Retry automatic preview</button>}
+  {error&&hasItems&&aiReady&&!safetyBlocked&&<button onClick={()=>{setPaused(false);setRetry(n=>n+1)}} className="pill mt-2 w-full text-xs">↻ Retry automatic preview</button>}
   {error&&<p role="alert" className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">{notice}</p>}
   {!error&&notice&&<p role="status" className="mt-2 text-xs text-violet-200">{notice}</p>}
   <div className="mt-4 flex items-center justify-between"><h3 className="text-sm font-bold">Your picks</h3><span className="text-xs text-white/45">{ids.length} / 5 pieces</span></div>
