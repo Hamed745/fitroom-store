@@ -78,11 +78,14 @@ async function renderPass(accountId:string,token:string,input:Buffer,baseMime:st
  if(!response.ok||body?.success===false){
   const explanation=body?.errors?.[0]?.message||body?.result?.message||'Cloudflare image editing request failed.';
   console.error('[fitroom-cloudflare] status:',response.status,'error:',String(explanation).slice(0,600));
-  const friendly=response.status===429?'Cloudflare daily limit or request rate was reached. Wait until quota resets.':
+  const flagged=/output has been flagged|input image combination|safety filter|content policy|moderation/i.test(String(explanation));
+  const friendly=flagged?
+   'Cloudflare blocked this AI image request under its safety checks. No image was generated. Try a different suitable retail mannequin reference or use a specialized virtual try-on provider.':
+   response.status===429?'Cloudflare daily limit or request rate was reached. Wait until quota resets.':
    response.status===401||response.status===403?'Cloudflare credentials or Workers AI permissions were rejected.':
    response.status===400?'Cloudflare rejected the image references or their sizes; check server console.':
    String(explanation).slice(0,260);
-  throw new Error(friendly);
+  throw Object.assign(new Error(friendly),{blocked:flagged});
  }
  const decoded=decodeOutput(body);
  if(!decoded.image||!decoded.bytes.length)throw new Error('Cloudflare did not return a valid image. Check model response format.');
@@ -150,6 +153,7 @@ export async function POST(request:Request){
  }catch(error){
   const msg=error instanceof Error?error.message:'Image edit failed.';
   console.error('[fitroom-cloudflare] request failed:',msg.slice(0,350));
-  return NextResponse.json({message:msg},{status:502});
+  const blocked=Boolean(error&&typeof error==='object'&&'blocked' in error&&(error as {blocked?:boolean}).blocked);
+  return NextResponse.json({message:msg,paused:blocked,code:blocked?'CONTENT_FILTERED':undefined},{status:blocked?422:502});
  }
 }
